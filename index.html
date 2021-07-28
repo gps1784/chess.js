@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>Chess.js</title>
+    <link rel="stylesheet" href="assets/css/chess.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <script src="assets/js/chess.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+  </head>
+  <body>
+    <h2 class="header center">Chess.js - A chess-by-mail webapp</h2>
+    <hr>
+    <div class="container" id="chess">
+      <script type="text/javascript"> new ChessJS('chess'); </script>
+    </div>
+    <div class="container">
+      <div class="row">
+        <div class="col offset-s4">
+          <div class="input-field inline">
+            <input type="text" id="chess-js-hash" placeholder="Chess ID #"></input>
+          </div>
+          <button type="button" class="btn">Set Board</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
