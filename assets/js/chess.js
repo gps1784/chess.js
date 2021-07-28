@@ -1,6 +1,8 @@
 /**
  * ChessJS - used to create a new <canvas> *inside* of existing <div>.
  * If you want to use an existing <canvas> object, use ChessJS.useCanvas().
+ * TODO:
+ * - Add the option(?) for a double-buffer with two stacked canvases
  */
 function ChessJS(canvasParentID, boardState=null) {
   this.rowNames = ["8","7","6","5","4","3","2","1"];
@@ -18,8 +20,7 @@ function ChessJS(canvasParentID, boardState=null) {
   this.canvas.context.mozImageSmoothingEnabled    = false;
   this.canvas.context.webkitImageSmoothingEnabled = false;
   /* set default board colors */
-  this.fillLight = ["#809988","#36443B"];
-  this.fillDark  = ["#607768","#36443B"];
+  this.palette = ChessJS.COLOR_PALETTES["green"];
   this.xHover = null;
   this.yHover = null;
   this.xDown  = null;
@@ -45,17 +46,42 @@ function ChessJS(canvasParentID, boardState=null) {
     }
     self.xHover = e.offsetX;
     self.yHover = e.offsetY;
-    console.debug(self.xHover, self.yHover);
   });
 
   this.canvas.addEventListener('mousedown', e => {
     self.xDown = e.offsetX;
     self.yDown = e.offsetY;
+    this.createBoard();
+    this.setBoard();
+    console.debug("mousedown @", self.xDown, self.yDown);
   });
+
+    this.canvas.addEventListener('mouseup', e => {
+      self.xDown = null;
+      self.yDown = null;
+      this.createBoard();
+      this.setBoard();
+      console.debug("mouseup");
+    });
 
   /* create table, fill, and return to user */
   this.target.appendChild(this.canvas);
   return this;
+};
+
+ChessJS.COLOR_PALETTES = {
+  "green": {
+    "light": {
+      "normal": "#809988",
+      "hover":  "#4E8199",//"#526658",
+      "down":   "#998A4E",//"#998880",
+    },
+    "dark": {
+      "normal": "#607768",
+      "hover":  "#4E8199",//"#36443B",
+      "down":   "#998A4E",
+    },
+  },
 };
 
 ChessJS.prototype.createLabels = function () {
@@ -87,20 +113,29 @@ ChessJS.prototype.createCell = function (idx, idy) {
   let segmentSize = this.canvas.width / 9;
   let x = (idx+1) * segmentSize;
   let y = (idy+1) * segmentSize;
-  let hoverColor = 0;
+  let colorState = "normal";
 
-  /* this creates an two-tone XOR pattern across the rows and columns */
+  /* calculate whether to use a different colorState */
   if (
+    (this.xDown != null) &&
+    (this.yDown != null) &&
+    (this.xDown > x) &&
+    (this.xDown < x + segmentSize) &&
+    (this.yDown > y) &&
+    (this.yDown < y + segmentSize)) {
+      colorState = "down";
+  } else if (
     (this.xHover > x) &&
     (this.xHover < x + segmentSize) &&
     (this.yHover > y) &&
     (this.yHover < y + segmentSize)) {
-      hoverColor = 1;
+      colorState = "hover";
   }
+  /* this creates an two-tone XOR pattern across the rows and columns */
   if ((idx + idy) % 2 === 0) {
-    this.canvas.context.fillStyle = this.fillLight[hoverColor];
+    this.canvas.context.fillStyle = this.palette["light"][colorState];
   } else {
-    this.canvas.context.fillStyle = this.fillDark[hoverColor];
+    this.canvas.context.fillStyle = this.palette["dark"][colorState];
   }
   this.canvas.context.fillRect(x, y, segmentSize, segmentSize);
 };
