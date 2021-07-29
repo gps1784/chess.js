@@ -56,7 +56,7 @@ ChessJS.appendToParent = function(parentID, boardState=null) {
   let chess  = new ChessJS(canvas, boardState, w, h);
   parent.appendChild(canvas);
   return chess;
-}; // ChessJS.appendToParent()
+}; // function ChessJS.appendToParent()
 
 ChessJS.COLOR_PALETTES = {
   'green': {
@@ -123,6 +123,7 @@ ChessJS.prototype.drawCell = function (cell) {
   let row   = cr[1];
   let state = 'normal'; // default, e.g. 'hover', 'down'
   /* determine color for background */
+  /* TODO: add a cellIsMouseDown() and cellIsMouseHover(), plz jfc */
   if (
     (down.hold != false) &&
     (down.x > x) &&
@@ -160,7 +161,10 @@ ChessJS.prototype.drawCell = function (cell) {
 
 /* setters */
 
-ChessJS.prototype.clearCell = function (cell) {};
+ChessJS.prototype.clearCell = function (cell) {
+  this.board[cell] = null;
+  return this;
+}; // function ChessJS.prototype.clearCell()
 
 ChessJS.prototype.setCell = function (cell, color, piece) {
   this.board[cell] = { color: color, piece: piece };
@@ -254,6 +258,7 @@ ChessJS.prototype.mouseup = function (e) {
   this.mouse.down = { hold: false, x: null, y: null, cell: null };
   this.drawBoard();
 }; // function ChessJS.prototype.mouseup()
+
 /* helpers */
 
 ChessJS.prototype.convertColRowToCell = function (col, row) {
@@ -264,32 +269,33 @@ ChessJS.prototype.convertColRowToCell = function (col, row) {
     row = this.convertToRow(y * this.segmentSize);
   }
   return col+row;
-};
+}; // function ChessJS.prototype.convertColRowToCell()
 
 ChessJS.prototype.convertXYToCell = function (x, y) {
   let col = this.convertToCol(x);
   let row = this.convertToRow(y);
   return this.convertColRowToCell(col, row);
-};
+}; // function ChessJS.prototype.convertXYToCell()
 
 ChessJS.prototype.convertCellToXY = function (cell) {
   let cr = this.convertCellToColRow(cell);
   let x  = cr[0] * this.segmentSize;
   let y  = cr[1] * this.segmentSize;
   return [x, y];
-}; // ChessJS.prototype.convertCellToXY()
+}; // function ChessJS.prototype.convertCellToXY()
 
 ChessJS.prototype.convertCellToColRow = function (cell) {
   let cr  = Array.from(cell);
   let col = this.cols.indexOf(cr[0]);
   let row = this.rows.indexOf(cr[1]);
   return [col, row];
-}; // ChessJS.prototype.convertCellToColRow()
+}; // function ChessJS.prototype.convertCellToColRow()
 
+// TODO: inconsistent behavior, should these be indexes, or values??
 ChessJS.prototype.convertToCol = function (x) {
   return this.cols[Math.floor(x / this.segmentSize)];
-};
+}; // function ChessJS.prototype.convertToCol()
 
 ChessJS.prototype.convertToRow = function (y) {
   return this.rows[Math.floor(y / this.segmentSize)];
-};
+}; // function ChessJS.prototype.convertToRow()
