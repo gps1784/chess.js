@@ -4,215 +4,292 @@
  * TODO:
  * - Add the option(?) for a double-buffer with two stacked canvases
  */
-function ChessJS(canvasParentID, boardState=null) {
-  this.rowNames = ["8","7","6","5","4","3","2","1"];
-  this.colNames = ["A","B","C","D","E","F","G","H"];
-  /* setup target element */
-  this.target = document.getElementById(canvasParentID);
-  /* setup table element */
-  this.canvas = document.createElement("canvas");
-  this.canvas.classList = "chess-js-canvas";
-  this.canvas.width     = this.target.offsetWidth;
-  this.canvas.height    = this.target.offsetWidth;
-  this.canvas.context   = this.canvas.getContext("2d");
+
+/* create a new canvas and board */
+function ChessJS(canvas, boardState=null, w=null, h=null) {
+  this.rows = [null,'8','7','6','5','4','3','2','1',null];
+  this.cols = [null,'A','B','C','D','E','F','G','H'];
+  this.canvas  = canvas;
+  this.context = this.canvas.getContext('2d');
+  if (w != null) {
+    this.canvas.width = w;
+  }
+  if (h != null) {
+    this.canvas.height = h;
+  }
+  this.canvas.classList = 'chess-js-canvas';
+  this.segmentSize = this.canvas.width / 9;
   /* disable imageSmoothing because we want the pixel art, for now */
-  this.canvas.context.imageSmoothingEnabled       = false;
-  this.canvas.context.mozImageSmoothingEnabled    = false;
-  this.canvas.context.webkitImageSmoothingEnabled = false;
+  this.context.imageSmoothingEnabled       = false;
+  this.context.mozImageSmoothingEnabled    = false;
+  this.context.webkitImageSmoothingEnabled = false;
   /* set default board colors */
-  this.palette = ChessJS.COLOR_PALETTES["green"];
-  this.xHover = null;
-  this.yHover = null;
-  this.xDown  = null;
-  this.yDown  = null;
-  let self = this;
-  let segmentSize = this.canvas.width / 9;
-
-  this.createLabels();
-  this.createBoard();
-  this.setBoard();
-
-  this.canvas.addEventListener('mousemove', e => {
-    let xNew = e.offsetX;
-    let yNew = e.offsetY;
-    if (
-      (Math.floor(xNew / segmentSize) != Math.floor(self.xHover / segmentSize)) ||
-      (Math.floor(yNew / segmentSize) != Math.floor(self.yHover / segmentSize))
-    ) {
-      self.xHover = e.offsetX;
-      self.yHover = e.offsetY;
-      this.createBoard();
-      this.setBoard();
-    }
-    self.xHover = e.offsetX;
-    self.yHover = e.offsetY;
-  });
-
-  this.canvas.addEventListener('mousedown', e => {
-    self.xDown = e.offsetX;
-    self.yDown = e.offsetY;
-    this.createBoard();
-    this.setBoard();
-    console.debug("mousedown @", self.xDown, self.yDown);
-  });
-
-    this.canvas.addEventListener('mouseup', e => {
-      self.xDown = null;
-      self.yDown = null;
-      this.createBoard();
-      this.setBoard();
-      console.debug("mouseup");
-    });
-
-  /* create table, fill, and return to user */
-  this.target.appendChild(this.canvas);
+  this.palette = ChessJS.COLOR_PALETTES['green'];
+  /* board state, mouse positions */
+  this.board  = {};
+  this.mouse  = {
+    down: { hold: false, x: null, y: null, cell: null },
+    hover: { x: null, y: null, cell: null }
+  };
+  this.drawLabels();
+  this.setBoard(boardState);
+  this.drawBoard();
+  this.canvas.addEventListener('mousemove', this.mousemove.bind(this));
+  this.canvas.addEventListener('mousedown', this.mousedown.bind(this));
+  this.canvas.addEventListener('mouseup',   this.mouseup.bind(this));
   return this;
-};
+}; // function ChessJS();
+
+/* initialize chess board on an existing canvas */
+ChessJS.useCanvas = function(canvasID, boardState=null) {
+  let canvas = document.getElementById(canvasID);
+  let chess  = new ChessJS(canvas, boardState);
+  return chess;
+}; // function ChessJS.useCanvas()
+
+/* initialize canvas, then chess board, insert, and return */
+ChessJS.appendToParent = function(parentID, boardState=null) {
+  let parent = document.getElementById(parentID);
+  let canvas = document.createElement('canvas');
+  let w = parent.offsetWidth;
+  let h = parent.offsetWidth; // TODO: looks to big on large displays
+  let chess  = new ChessJS(canvas, boardState, w, h);
+  parent.appendChild(canvas);
+  return chess;
+}; // ChessJS.appendToParent()
 
 ChessJS.COLOR_PALETTES = {
-  "green": {
-    "light": {
-      "normal": "#809988",
-      "hover":  "#4E8199",//"#526658",
-      "down":   "#998A4E",//"#998880",
+  'green': {
+    'light': {
+      'normal': '#809988',
+      'hover':  '#4E8199',//'#526658',
+      'down':   '#998A4E',//'#998880',
     },
-    "dark": {
-      "normal": "#607768",
-      "hover":  "#4E8199",//"#36443B",
-      "down":   "#998A4E",
+    'dark': {
+      'normal': '#607768',
+      'hover':  '#4E8199',//'#36443B',
+      'down':   '#998A4E',
     },
   },
-};
+}; // ChessJS.COLOR_PALETTES
 
-ChessJS.prototype.createLabels = function () {
-  let segmentSize = this.canvas.width / 9;
-  /* setup text around the border of the board */
-  this.canvas.context.font = "40px Arial";
-  this.canvas.context.textAlign = "center";
-  this.canvas.context.textBaseline = "middle";
-  /* "8", "7", "6", etc. down the rows */
-  this.rowNames.forEach((rowName, idy) => {
-    this.canvas.context.strokeText(rowName, segmentSize / 1.2, (idy+1.5) * segmentSize);
-  });
-  /* "A", "B", "C", etc. across the columns */
-  this.colNames.forEach((colName, idx) => {
-    this.canvas.context.strokeText(colName, (idx+1.5) * segmentSize, segmentSize / 1.2);
-  });
-};
+/* render functions */
 
-ChessJS.prototype.createBoard = function () {
-  /* draw the board (a group of rectangles) */
-  this.rowNames.forEach((rowName, idy) => {
-    this.colNames.forEach((colName, idx) => {
-      this.createCell(idx, idy);
+ChessJS.prototype.drawLabels = function () {
+  /* you shouldn't need to run this function often */
+  this.context.font = '40px Arial';
+  this.context.textAlign = 'center';
+  this.context.textBaseline = 'middle';
+  /* '8', '7', '6', etc. down the rows */
+  this.rows.forEach((row, idy) => {
+    if (row != null) {
+      this.context.strokeText(row, this.segmentSize / 1.2, (idy+0.5) * this.segmentSize);
+    }
+  });
+  /* 'A', 'B', 'C', etc. across the columns */
+  this.cols.forEach((col, idx) => {
+    if (col != null) {
+      this.context.strokeText(col, (idx+0.5) * this.segmentSize, this.segmentSize / 1.2);
+    }
+  });
+
+}; // function ChessJS.prototype.drawLabels()
+
+ChessJS.prototype.drawBoard = function () {
+  this.rows.forEach((row, idy) => {
+    this.cols.forEach((col, idx) => {
+      if (row != null && col != null) {
+        // TODO: this.drawCell => this.drawColRow
+        this.drawCell(this.convertColRowToCell(col, row));
+      }
     });
   });
-};
+  return this;
+}; // function ChessJS.prototype.drawBoard()
 
-ChessJS.prototype.createCell = function (idx, idy) {
-  let segmentSize = this.canvas.width / 9;
-  let x = (idx+1) * segmentSize;
-  let y = (idy+1) * segmentSize;
-  let colorState = "normal";
-
-  /* calculate whether to use a different colorState */
+ChessJS.prototype.drawCell = function (cell) {
+  /* a shorthand for later */
+  let context = this.context;
+  let ss      = this.segmentSize;
+  /* variable roundup, yeehaw */
+  let xy    = this.convertCellToXY(cell);
+  let cr    = this.convertCellToColRow(cell);
+  let pc    = this.getCell(cell);
+  let down  = this.mouse.down;
+  let hover = this.mouse.hover;
+  let x     = xy[0];
+  let y     = xy[1];
+  let col   = cr[0];
+  let row   = cr[1];
+  let state = 'normal'; // default, e.g. 'hover', 'down'
+  /* determine color for background */
   if (
-    (this.xDown != null) &&
-    (this.yDown != null) &&
-    (this.xDown > x) &&
-    (this.xDown < x + segmentSize) &&
-    (this.yDown > y) &&
-    (this.yDown < y + segmentSize)) {
-      colorState = "down";
+    (down.hold != false) &&
+    (down.x > x) &&
+    (down.x < x + ss) &&
+    (down.y > y) &&
+    (down.y < y + ss)) {
+      state = 'down';
   } else if (
-    (this.xHover > x) &&
-    (this.xHover < x + segmentSize) &&
-    (this.yHover > y) &&
-    (this.yHover < y + segmentSize)) {
-      colorState = "hover";
+    (hover.cell != null) &&
+    (hover.x > x) &&
+    (hover.x < x + ss) &&
+    (hover.y > y) &&
+    (hover.y < y + ss)) {
+      state = 'hover';
   }
+  console.debug(cell, xy[0], xy[1], pc);
   /* this creates an two-tone XOR pattern across the rows and columns */
-  if ((idx + idy) % 2 === 0) {
-    this.canvas.context.fillStyle = this.palette["light"][colorState];
+  if ((col + row) % 2 === 0) {
+    this.context.fillStyle = this.palette['light'][state];
   } else {
-    this.canvas.context.fillStyle = this.palette["dark"][colorState];
+    this.context.fillStyle = this.palette['dark'][state];
   }
-  this.canvas.context.fillRect(x, y, segmentSize, segmentSize);
-};
-
-ChessJS.prototype.clearCell = function (col, row) {
-  let segmentSize = this.canvas.width / 9;
-  let idx = this.convertColToIndex(col);
-  let idy = this.convertRowToIndex(row);
-  this.createCell(idx, idy);
-  return this;
-};
-
-ChessJS.prototype.setCell = function (col, row, color, piece) {
-  let segmentSize = this.canvas.width / 9;
-  let context = this.canvas.context;
-  let idx = this.convertColToIndex(col);
-  let idy = this.convertRowToIndex(row);
-  //console.debug(this.colNames[idx] + this.rowNames[idy], color, piece);
-  var img  = document.createElement("img");
-  img.src    = "assets/images/" + piece + "_" + color + ".png";
-  img.alt    = color + " " + piece;
-  img.title  = img.alt + " at " + this.colNames[idx] + this.rowNames[idy];
-  img.onload = function() {
-    context.drawImage(img, (idx+1) * segmentSize, (idy+1) * segmentSize, segmentSize, segmentSize);
+  this.context.fillRect(x, y, ss, ss);
+  /* render the sprite for the chess piece, if needed */
+  if (pc != null) {
+    let context = this.context;
+    let img     = document.createElement('img');
+    img.src     = 'assets/images/' + pc.piece + '_' + pc.color + '.png';
+    img.onload  = function() {
+      context.drawImage(img, col * ss, row * ss, ss, ss);
+    } // img.onload
   }
   return this;
-};
+}; // function ChessJS.prototype.drawCell()
 
-ChessJS.prototype.setBoard = function () {
-    // TODO: add parser
-    this.setCell("A", 8, "black", "castle");
-    this.setCell("B", 8, "black", "knight");
-    this.setCell("C", 8, "black", "bishop");
-    this.setCell("D", 8, "black", "queen");
-    this.setCell("E", 8, "black", "king");
-    this.setCell("F", 8, "black", "bishop");
-    this.setCell("G", 8, "black", "knight");
-    this.setCell("H", 8, "black", "castle");
-    this.setCell("A", 7, "black", "pawn");
-    this.setCell("B", 7, "black", "pawn");
-    this.setCell("C", 7, "black", "pawn");
-    this.setCell("D", 7, "black", "pawn");
-    this.setCell("E", 7, "black", "pawn");
-    this.setCell("F", 7, "black", "pawn");
-    this.setCell("G", 7, "black", "pawn");
-    this.setCell("H", 7, "black", "pawn");
-    this.setCell("A", 2, "white", "pawn");
-    this.setCell("B", 2, "white", "pawn");
-    this.setCell("C", 2, "white", "pawn");
-    this.setCell("D", 2, "white", "pawn");
-    this.setCell("E", 2, "white", "pawn");
-    this.setCell("F", 2, "white", "pawn");
-    this.setCell("G", 2, "white", "pawn");
-    this.setCell("H", 2, "white", "pawn");
-    this.setCell("A", 1, "white", "castle");
-    this.setCell("B", 1, "white", "knight");
-    this.setCell("C", 1, "white", "bishop");
-    this.setCell("D", 1, "white", "queen");
-    this.setCell("E", 1, "white", "king");
-    this.setCell("F", 1, "white", "bishop");
-    this.setCell("G", 1, "white", "knight");
-    this.setCell("H", 1, "white", "castle");
-};
+/* setters */
 
-ChessJS.prototype.convertColToIndex = function (col) {
-  let segmentSize = this.canvas.width / 9;
-  if (isNaN(col)) {
-    col = this.colNames.indexOf(col);
+ChessJS.prototype.clearCell = function (cell) {};
+
+ChessJS.prototype.setCell = function (cell, color, piece) {
+  this.board[cell] = { color: color, piece: piece };
+  return this;
+}; // function ChessJS.prototype.setCell()
+
+ChessJS.prototype.setBoard = function (boardState) {
+  if (boardState === null) {
+    this.setCell("A8", "black", "castle");
+    this.setCell("B8", "black", "knight");
+    this.setCell("C8", "black", "bishop");
+    this.setCell("D8", "black", "queen");
+    this.setCell("E8", "black", "king");
+    this.setCell("F8", "black", "bishop");
+    this.setCell("G8", "black", "knight");
+    this.setCell("H8", "black", "castle");
+    this.setCell("A7", "black", "pawn");
+    this.setCell("B7", "black", "pawn");
+    this.setCell("C7", "black", "pawn");
+    this.setCell("D7", "black", "pawn");
+    this.setCell("E7", "black", "pawn");
+    this.setCell("F7", "black", "pawn");
+    this.setCell("G7", "black", "pawn");
+    this.setCell("H7", "black", "pawn");
+    this.setCell("A2", "white", "pawn");
+    this.setCell("B2", "white", "pawn");
+    this.setCell("C2", "white", "pawn");
+    this.setCell("D2", "white", "pawn");
+    this.setCell("E2", "white", "pawn");
+    this.setCell("F2", "white", "pawn");
+    this.setCell("G2", "white", "pawn");
+    this.setCell("H2", "white", "pawn");
+    this.setCell("A1", "white", "castle");
+    this.setCell("B1", "white", "knight");
+    this.setCell("C1", "white", "bishop");
+    this.setCell("D1", "white", "queen");
+    this.setCell("E1", "white", "king");
+    this.setCell("F1", "white", "bishop");
+    this.setCell("G1", "white", "knight");
+    this.setCell("H1", "white", "castle");
   } else {
-    col = this.colName.indexOf(col.toString());
+    // TODO: parse
+    throw("I cannot parse boardState yet!");
   }
-  return col;
+}; // function ChessJS.prototype.setBoard()
+
+/* getters */
+
+ChessJS.prototype.getCell = function (cell) {
+  return (this.board[cell] || null);
+}; // function ChessJS.prototype.getCell()
+
+/* events */
+ChessJS.prototype.mousemove = function (e) {
+  let x    = e.offsetX;
+  let y    = e.offsetY;
+  let col  = this.convertToCol(x);
+  let row  = this.convertToRow(y);
+  let cell = this.convertXYToCell(x, y);
+  if (col != null && row != null) {
+    if (this.mouse.hover.cell != null) {
+      let oldCell = this.mouse.hover.cell;
+      this.mouse.hover = { x: x, y: y, cell: cell };
+      // only write to the screen if there's a change
+      if (oldCell != cell) {
+        this.drawCell(cell);
+        this.drawCell(oldCell);
+      }
+    } else {
+      this.mouse.hover = { x: x, y: y, cell: cell };
+      this.drawCell(cell);
+    }
+  } else {
+    let oldCell = this.mouse.hover.cell;
+    this.mouse.hover = { x: null, y: null, cell: null };
+    if (oldCell != null) {
+      this.drawCell(oldCell);
+    }
+  }
+}; // function ChessJS.prototype.mousemove()
+
+ChessJS.prototype.mousedown = function (e) {
+  let x    = e.offsetX;
+  let y    = e.offsetY;
+  let cell = this.convertXYToCell(x, y);
+  this.mouse.down = { hold: true, x: x, y: y, cell: cell };
+  this.drawBoard();
+}; // function ChessJS.prototype.mousedown()
+
+ChessJS.prototype.mouseup = function (e) {
+  this.mouse.down = { hold: false, x: null, y: null, cell: null };
+  this.drawBoard();
+}; // function ChessJS.prototype.mouseup()
+/* helpers */
+
+ChessJS.prototype.convertColRowToCell = function (col, row) {
+  if (Number.isInteger(col)) { // if it's an index, not a col, e.g. 'A'
+    col = this.convertToCol(col * this.segmentSize);
+  }
+  if (Number.isInteger(row)) { // if it's an index, not a row, e.g. '1'
+    row = this.convertToRow(y * this.segmentSize);
+  }
+  return col+row;
 };
 
-ChessJS.prototype.convertRowToIndex = function (row) {
-  row = this.rowNames.indexOf(row.toString());
-  return row;
+ChessJS.prototype.convertXYToCell = function (x, y) {
+  let col = this.convertToCol(x);
+  let row = this.convertToRow(y);
+  return this.convertColRowToCell(col, row);
 };
 
-//function ChessJS.useCanvas(canvasID) {};
+ChessJS.prototype.convertCellToXY = function (cell) {
+  let cr = this.convertCellToColRow(cell);
+  let x  = cr[0] * this.segmentSize;
+  let y  = cr[1] * this.segmentSize;
+  return [x, y];
+}; // ChessJS.prototype.convertCellToXY()
+
+ChessJS.prototype.convertCellToColRow = function (cell) {
+  let cr  = Array.from(cell);
+  let col = this.cols.indexOf(cr[0]);
+  let row = this.rows.indexOf(cr[1]);
+  return [col, row];
+}; // ChessJS.prototype.convertCellToColRow()
+
+ChessJS.prototype.convertToCol = function (x) {
+  return this.cols[Math.floor(x / this.segmentSize)];
+};
+
+ChessJS.prototype.convertToRow = function (y) {
+  return this.rows[Math.floor(y / this.segmentSize)];
+};
