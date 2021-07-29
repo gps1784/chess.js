@@ -5,8 +5,11 @@
  * - Add the option(?) for a double-buffer with two stacked canvases
  */
 
+/* CONSTRUCTORS */
+
 /* create a new canvas and board */
 function ChessJS(canvas, boardState=null, w=null, h=null) {
+  this.convert(); // binds the conversion functions for use
   this.rows = [null,'8','7','6','5','4','3','2','1',null];
   this.cols = [null,'A','B','C','D','E','F','G','H'];
   this.canvas  = canvas;
@@ -26,7 +29,7 @@ function ChessJS(canvas, boardState=null, w=null, h=null) {
   /* set default board colors */
   this.palette = ChessJS.COLOR_PALETTES['green'];
   /* board state, mouse positions */
-  this.board  = {};
+  this.board  = { turn: 'white', white: { canCastle: true}, black: { canCastle: true } };
   this.mouse  = {
     down: { hold: false, x: null, y: null, cell: null },
     hover: { x: null, y: null, cell: null }
@@ -73,7 +76,7 @@ ChessJS.COLOR_PALETTES = {
   },
 }; // ChessJS.COLOR_PALETTES
 
-/* render functions */
+/* RENDERERS */
 
 ChessJS.prototype.drawLabels = function () {
   /* you shouldn't need to run this function often */
@@ -100,7 +103,7 @@ ChessJS.prototype.drawBoard = function () {
     this.cols.forEach((col, idx) => {
       if (row != null && col != null) {
         // TODO: this.drawCell => this.drawColRow
-        this.drawCell(this.convertColRowToCell(col, row));
+        this.drawCell(this.convert.ColRowToCell(col, row));
       }
     });
   });
@@ -112,15 +115,15 @@ ChessJS.prototype.drawCell = function (cell) {
   let context = this.context;
   let ss      = this.segmentSize;
   /* variable roundup, yeehaw */
-  let xy    = this.convertCellToXY(cell);
-  let cr    = this.convertCellToColRow(cell);
+  let xy    = this.convert.CellToXY(cell);
+  let id    = this.convert.CellToIdxIdy(cell);
   let pc    = this.getCell(cell);
   let down  = this.mouse.down;
   let hover = this.mouse.hover;
-  let x     = xy[0];
-  let y     = xy[1];
-  let col   = cr[0];
-  let row   = cr[1];
+  let x     = xy.x;
+  let y     = xy.y;
+  let idx   = id.idx;
+  let idy   = id.idy;
   let state = 'normal'; // default, e.g. 'hover', 'down'
   /* determine color for background */
   /* TODO: add a cellIsMouseDown() and cellIsMouseHover(), plz jfc */
@@ -139,9 +142,9 @@ ChessJS.prototype.drawCell = function (cell) {
     (hover.y < y + ss)) {
       state = 'hover';
   }
-  console.debug(cell, xy[0], xy[1], pc);
+  console.debug(cell, x, y, pc);
   /* this creates an two-tone XOR pattern across the rows and columns */
-  if ((col + row) % 2 === 0) {
+  if ((idx + idy) % 2 === 0) {
     this.context.fillStyle = this.palette['light'][state];
   } else {
     this.context.fillStyle = this.palette['dark'][state];
@@ -153,13 +156,13 @@ ChessJS.prototype.drawCell = function (cell) {
     let img     = document.createElement('img');
     img.src     = 'assets/images/' + pc.piece + '_' + pc.color + '.png';
     img.onload  = function() {
-      context.drawImage(img, col * ss, row * ss, ss, ss);
+      context.drawImage(img, idx * ss, idy * ss, ss, ss);
     } // img.onload
   }
   return this;
 }; // function ChessJS.prototype.drawCell()
 
-/* setters */
+/* SETTERS */
 
 ChessJS.prototype.clearCell = function (cell) {
   this.board[cell] = null;
@@ -167,7 +170,17 @@ ChessJS.prototype.clearCell = function (cell) {
 }; // function ChessJS.prototype.clearCell()
 
 ChessJS.prototype.setCell = function (cell, color, piece) {
-  this.board[cell] = { color: color, piece: piece };
+  let id = this.convert.CellToIdxIdy(cell);
+  let cr = this.convert.CellToColRow(cell);
+  this.board[cell] = {
+    color: color,
+    piece: piece,
+    cell: cell,
+    col: cr.col,
+    row: cr.row,
+    idx: id.idx,
+    idy: id.idy,
+  };
   return this;
 }; // function ChessJS.prototype.setCell()
 
@@ -211,19 +224,20 @@ ChessJS.prototype.setBoard = function (boardState) {
   }
 }; // function ChessJS.prototype.setBoard()
 
-/* getters */
+/* GETTERS */
 
 ChessJS.prototype.getCell = function (cell) {
   return (this.board[cell] || null);
 }; // function ChessJS.prototype.getCell()
 
-/* events */
+/* EVENT LISTENERS */
+
 ChessJS.prototype.mousemove = function (e) {
   let x    = e.offsetX;
   let y    = e.offsetY;
-  let col  = this.convertToCol(x);
-  let row  = this.convertToRow(y);
-  let cell = this.convertXYToCell(x, y);
+  let col  = this.convert.XToCol(x);
+  let row  = this.convert.YToRow(y);
+  let cell = this.convert.XYToCell(x, y);
   if (col != null && row != null) {
     if (this.mouse.hover.cell != null) {
       let oldCell = this.mouse.hover.cell;
@@ -249,7 +263,7 @@ ChessJS.prototype.mousemove = function (e) {
 ChessJS.prototype.mousedown = function (e) {
   let x    = e.offsetX;
   let y    = e.offsetY;
-  let cell = this.convertXYToCell(x, y);
+  let cell = this.convert.XYToCell(x, y);
   this.mouse.down = { hold: true, x: x, y: y, cell: cell };
   this.drawBoard();
 }; // function ChessJS.prototype.mousedown()
@@ -259,43 +273,81 @@ ChessJS.prototype.mouseup = function (e) {
   this.drawBoard();
 }; // function ChessJS.prototype.mouseup()
 
-/* helpers */
 
-ChessJS.prototype.convertColRowToCell = function (col, row) {
-  if (Number.isInteger(col)) { // if it's an index, not a col, e.g. 'A'
-    col = this.convertToCol(col * this.segmentSize);
-  }
-  if (Number.isInteger(row)) { // if it's an index, not a row, e.g. '1'
-    row = this.convertToRow(y * this.segmentSize);
-  }
-  return col+row;
-}; // function ChessJS.prototype.convertColRowToCell()
+/* HELPERS */
 
-ChessJS.prototype.convertXYToCell = function (x, y) {
-  let col = this.convertToCol(x);
-  let row = this.convertToRow(y);
-  return this.convertColRowToCell(col, row);
-}; // function ChessJS.prototype.convertXYToCell()
+/**
+ * CONVERTERS
+ * - Cell: a string, e.g. 'A1', 'B2', etc. Use getCell() for the struct
+ * - Col/Row: a string, e.g. 'A', 'B', etc.; '1', '2', etc.
+ * - Idx/Idy: a number representing the row or col, e.g. 1, 2, etc.
+ * - X/Y: a number, x or y in pixels
+ *
+ * ChessJS() will run this.convert() to rebind convert() to ChessJS().
+ * Otherwise, the conversion functions would bind `this` to convert()
+ * instead of to ChessJS().
+ */
 
-ChessJS.prototype.convertCellToXY = function (cell) {
-  let cr = this.convertCellToColRow(cell);
-  let x  = cr[0] * this.segmentSize;
-  let y  = cr[1] * this.segmentSize;
-  return [x, y];
-}; // function ChessJS.prototype.convertCellToXY()
+ChessJS.prototype.convert = function() {
+  this.convert.CellToColRow = this.convert.CellToColRow.bind(this);
+  this.convert.CellToIdxIdy = this.convert.CellToIdxIdy.bind(this);
+  this.convert.CellToXY     = this.convert.CellToXY.bind(this);
+  this.convert.ColRowToCell = this.convert.ColRowToCell.bind(this);
+  this.convert.XToCol       = this.convert.XToCol.bind(this);
+  this.convert.XYToCell     = this.convert.XYToCell.bind(this);
+  this.convert.XYToColRow   = this.convert.XYToColRow.bind(this);
+  this.convert.YToRow       = this.convert.YToRow.bind(this);
+}; // ChessJS.prototype.convert()
 
-ChessJS.prototype.convertCellToColRow = function (cell) {
+/* convert from cell */
+
+ChessJS.prototype.convert.CellToColRow = function (cell) {
   let cr  = Array.from(cell);
-  let col = this.cols.indexOf(cr[0]);
-  let row = this.rows.indexOf(cr[1]);
-  return [col, row];
-}; // function ChessJS.prototype.convertCellToColRow()
+  return { col: cr[0], row: cr[1] };
+}; // ChessJS.prototype.convert.CellToColRow()
 
-// TODO: inconsistent behavior, should these be indexes, or values??
-ChessJS.prototype.convertToCol = function (x) {
+ChessJS.prototype.convert.CellToIdxIdy = function (cell) {
+  let cr  = Array.from(cell);
+  let idx = this.cols.indexOf(cr[0]);
+  let idy = this.rows.indexOf(cr[1]);
+  return { idx: idx, idy: idy };
+}; // ChessJS.prototype.convert.CellToIdxIdy()
+
+ChessJS.prototype.convert.CellToXY = function (cell) {
+  let id = this.convert.CellToIdxIdy(cell);
+  let x  = id.idx * this.segmentSize;
+  let y  = id.idy * this.segmentSize;
+  return { x: x, y: y };
+}; // ChessJS.prototype.convert.CellToXY()
+
+/* convert from col/row */
+
+ChessJS.prototype.convert.ColRowToCell = function (col, row) {
+  return col+row; // e.g. 'A' + '1' = 'A1'
+}; // ChessJS.prototype.convert.ColRowToCell()
+
+/* convert from x */
+
+ChessJS.prototype.convert.XToCol = function (x) {
   return this.cols[Math.floor(x / this.segmentSize)];
-}; // function ChessJS.prototype.convertToCol()
+}; // ChessJS.prototype.convert.XToCol()
 
-ChessJS.prototype.convertToRow = function (y) {
+/* convert from x/y */
+
+ChessJS.prototype.convert.XYToCell = function (x, y) {
+  let col = this.convert.XToCol(x);
+  let row = this.convert.YToRow(y);
+  return this.convert.ColRowToCell(col, row);
+}; // ChessJS.prototype.convert.XYToCell()
+
+ChessJS.prototype.convert.XYToColRow = function (x, y) {
+  let col = this.convert.XToCol(x);
+  let row = this.convert.YToRow(y);
+  return { col: col, row: row };
+}; // ChessJS.prototype.convert.XYToColRow()
+
+/* convert from y */
+
+ChessJS.prototype.convert.YToRow = function (y) {
   return this.rows[Math.floor(y / this.segmentSize)];
-}; // function ChessJS.prototype.convertToRow()
+}; // ChessJS.prototype.convert.YToRow()
